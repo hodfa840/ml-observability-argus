@@ -7,7 +7,7 @@ sdk: docker
 app_port: 7860
 pinned: false
 license: mit
-short_description: Production MLOps — drift detection, auto-retraining, NYC taxi domain
+short_description: MLOps drift detection and auto-retraining platform
 ---
 
 # Argus
