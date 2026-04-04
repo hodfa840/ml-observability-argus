@@ -28,7 +28,7 @@ short_description: MLOps drift detection and auto-retraining platform
 
 ## Architecture
 
-![Architecture](assets/architecture.png)
+<img src="assets/architecture.png" alt="Argus architecture" width="900"/>
 
 Argus is a **production-grade ML monitoring platform** built around a NYC taxi trip-duration prediction service. It demonstrates the full MLOps lifecycle:
 
