@@ -14,7 +14,7 @@ short_description: Production MLOps — drift detection, auto-retraining, NYC ta
 
 > **Production ML models fail silently. Argus detects the failure, explains why, and fixes it automatically.**
 
-[![Live Demo](https://img.shields.io/badge/Live%20Demo-Hugging%20Face-FFD21E?logo=huggingface&logoColor=black)](https://huggingface.co/spaces/hodfa840/argus-mlops)
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-Hugging%20Face-FFD21E?logo=huggingface&logoColor=black)](https://huggingface.co/spaces/Hodfa71/argus-mlops)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python&logoColor=white)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.111-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.33-FF4B4B?logo=streamlit&logoColor=white)](https://streamlit.io)
@@ -22,7 +22,7 @@ short_description: Production MLOps — drift detection, auto-retraining, NYC ta
 [![scikit-learn](https://img.shields.io/badge/scikit--learn-1.4-F7931E?logo=scikit-learn&logoColor=white)](https://scikit-learn.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 
-**[Try the live demo on Hugging Face Spaces](https://huggingface.co/spaces/hodfa840/argus-mlops)**
+**[Try the live demo on Hugging Face Spaces](https://huggingface.co/spaces/Hodfa71/argus-mlops)**
 
 ---
 
