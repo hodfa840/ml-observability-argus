@@ -30,6 +30,8 @@ Thumbs.db
 .env
 *.pem
 *.key
+.hf_token
+../.hf_token
 
 # Jupyter
 .ipynb_checkpoints/
