@@ -1307,16 +1307,34 @@ if st.session_state.get("_scroll_page") != page:
     st.session_state["_scroll_count"] = _nav_count
     _components.html(
         f"""<script>/* {page}-{_nav_count} */
-        var el = window.parent.document.querySelector('[data-testid="stMain"]')
-              || window.parent.document.querySelector('.main');
-        if (el) {{
-            el.scrollTop = 0;
+        (function() {{
+            var SELECTORS = ['[data-testid="stMain"]', '.main',
+                             '[data-testid="stAppViewContainer"]'];
+            function findEl(win) {{
+                for (var s = 0; s < SELECTORS.length; s++) {{
+                    var el = win.document.querySelector(SELECTORS[s]);
+                    if (el) return el;
+                }}
+                return null;
+            }}
+            function scrollToTop() {{
+                // walk up available parent frames (handles HF double-iframe)
+                var frames = [window.parent, window.parent.parent, window.top];
+                for (var i = 0; i < frames.length; i++) {{
+                    try {{
+                        var el = findEl(frames[i]);
+                        if (el) {{ el.scrollTop = 0; }}
+                        frames[i].scrollTo(0, 0);
+                    }} catch(e) {{ /* cross-origin frame, skip */ }}
+                }}
+            }}
+            scrollToTop();
             var c = 0;
             var iv = setInterval(function() {{
-                el.scrollTop = 0;
-                if (++c >= 15) clearInterval(iv);
+                scrollToTop();
+                if (++c >= 20) clearInterval(iv);
             }}, 80);
-        }}
+        }})();
         </script>""",
         height=1,
         scrolling=False,
