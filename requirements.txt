@@ -1,0 +1,34 @@
+# ============================================================
+# Self-Healing ML System — Requirements
+# ============================================================
+
+# API
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9
+httpx>=0.27.0
+
+# ML core
+scikit-learn>=1.4.0
+numpy>=1.26.0
+pandas>=2.2.0
+scipy>=1.13.0
+joblib>=1.4.0
+
+# Experiment tracking
+mlflow>=2.12.0
+
+# Data storage
+pyarrow>=15.0.0
+
+# Config
+pyyaml>=6.0
+pydantic>=2.7.0
+
+# Dashboard
+streamlit>=1.33.0
+plotly>=5.20.0
+requests>=2.31.0
+
+# Visualization (asset generation)
+matplotlib>=3.8.0

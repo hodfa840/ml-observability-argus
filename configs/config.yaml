@@ -1,0 +1,94 @@
+app:
+  name: "Argus"
+  version: "1.0.0"
+  environment: "development"
+  log_level: "INFO"
+
+api:
+  host: "0.0.0.0"
+  port: 8000
+  workers: 2
+  reload: false
+  prediction_log_path: "data/logs/predictions.jsonl"
+
+data:
+  raw_path: "data/raw"
+  processed_path: "data/processed"
+  reference_dataset: "data/processed/reference.parquet"
+  n_reference_samples: 5000
+  features:
+    - passenger_count
+    - trip_distance
+    - pickup_hour
+    - pickup_dow
+    - pickup_month
+    - pickup_is_weekend
+    - rate_code_id
+    - payment_type
+    - pu_location_zone
+    - do_location_zone
+    - vendor_id
+  target: "trip_duration_min"
+
+model:
+  algorithm: "gradient_boosting"
+  registry_path: "data/model_registry"
+  champion_path: "data/model_registry/champion"
+  challenger_path: "data/model_registry/challenger"
+  hyperparams:
+    n_estimators: 200
+    max_depth: 6
+    learning_rate: 0.05
+    subsample: 0.8
+    min_samples_split: 20
+    random_state: 42
+  evaluation:
+    test_size: 0.2
+    primary_metric: "rmse"
+    promotion_threshold: 0.05
+
+monitoring:
+  window_size: 500
+  min_samples_for_evaluation: 100
+  performance_log_path: "data/logs/performance.jsonl"
+  drift_report_path: "data/logs/drift_reports.jsonl"
+
+  performance:
+    baseline_rmse: null
+    degradation_threshold: 0.15
+    consecutive_windows_before_alert: 2
+
+  drift:
+    psi_threshold: 0.2
+    ks_pvalue_threshold: 0.05
+    min_samples_for_drift_test: 200
+    feature_importance_top_k: 5
+
+delayed_feedback:
+  label_delay_hours: 24
+  feedback_log_path: "data/logs/feedback.jsonl"
+  label_matching_window_seconds: 3600
+
+retraining:
+  strategy: "intelligent"
+  min_samples_since_last_retrain: 1000
+  cooldown_hours: 6
+  retrain_log_path: "data/logs/retraining.jsonl"
+  data_window_days: 30
+
+mlflow:
+  tracking_uri: "data/mlruns"
+  experiment_name: "argus"
+  artifact_location: "data/mlruns/artifacts"
+
+simulation:
+  random_seed: 42
+  drift_types:
+    gradual:
+      duration_steps: 500
+      max_shift_std_multiplier: 2.0
+    sudden:
+      shift_std_multiplier: 3.0
+    seasonal:
+      period_hours: 24
+      amplitude_multiplier: 1.5

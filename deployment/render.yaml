@@ -1,0 +1,24 @@
+# ============================================================
+# Render.com deployment config
+# Free tier: 750h/month, auto-sleep after 15min inactivity
+# ============================================================
+
+services:
+  - type: web
+    name: self-healing-ml-api
+    runtime: python
+    plan: free
+    buildCommand: |
+      pip install -r requirements.txt &&
+      python scripts/train_initial_model.py
+    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHONPATH
+        value: /opt/render/project/src
+      - key: PYTHONUNBUFFERED
+        value: "1"
+    disk:
+      name: model-data
+      mountPath: /opt/render/project/src/data
+      sizeGB: 1
+    healthCheckPath: /health
