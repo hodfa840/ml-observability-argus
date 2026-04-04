@@ -9,9 +9,9 @@ build/
 venv/
 env/
 
-# Data (persisted locally, not in git)
-data/
-!data/.gitkeep
+# Data (persisted locally, not in git) — root-anchored to avoid excluding src/data/
+/data/
+!/data/.gitkeep
 
 # MLflow
 mlruns/
