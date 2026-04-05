@@ -444,7 +444,7 @@ if page == "Overview":
 
         if not perf_df.empty and "rmse" in perf_df.columns:
             perf_df["idx"] = range(len(perf_df))
-            bsl = perf_df["rmse"].iloc[0]
+            bsl = baseline or perf_df["rmse"].min()
 
             fig = go.Figure()
             fig.add_trace(go.Scatter(
@@ -507,11 +507,13 @@ if page == "Overview":
                                annotation_text="Quality floor (0.80)",
                                annotation_position="bottom right",
                                annotation_font_color=WARN)
+                r2_min = float(perf_df["r2"].min())
+                r2_floor = min(r2_min - 0.05, -0.1) if r2_min < 0 else -0.05
                 fig2.update_layout(
                     **_plotly_layout(
                         height=160,
                         xaxis=dict(title="", gridcolor=BORDER),
-                        yaxis=dict(title="R\u00b2", gridcolor=BORDER, range=[0, 1.05]),
+                        yaxis=dict(title="R\u00b2", gridcolor=BORDER, range=[r2_floor, 1.05]),
                         showlegend=False,
                     )
                 )

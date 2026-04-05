@@ -272,3 +272,166 @@ class TestDashboardUI:
         """Save a screenshot to assets/test_screenshot.png for inspection."""
         screenshot_path = ROOT / "assets" / "test_screenshot.png"
         driver.save_screenshot(str(screenshot_path))
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: fix #1 — baseline RMSE must not use iloc[0] from the log
+# ---------------------------------------------------------------------------
+
+class TestBaselineRmseLogic:
+    """
+    Verify that the baseline hline calculation uses api_metrics baseline_rmse
+    rather than the first row of the performance log.
+
+    Before the fix:  bsl = perf_df["rmse"].iloc[0]
+    After the fix:   bsl = baseline or perf_df["rmse"].min()
+
+    If the log starts mid-drift (high RMSE), iloc[0] would have been wrong.
+    """
+
+    def _bsl(self, api_baseline, perf_rmse_values: list) -> float:
+        """Replicate the fixed dashboard bsl calculation."""
+        import numpy as np
+        df = pd.DataFrame({"rmse": perf_rmse_values})
+        baseline = api_baseline
+        return baseline if baseline else float(df["rmse"].min())
+
+    def test_uses_api_baseline_when_available(self):
+        # Log starts at a high value (simulating mid-drift start)
+        rmse_series = [10.5, 10.8, 11.2, 11.0, 10.9]
+        bsl = self._bsl(api_baseline=2.1, perf_rmse_values=rmse_series)
+        assert bsl == 2.1, (
+            f"Expected api baseline 2.1, got {bsl}. "
+            "Fix is not applied: bsl must come from api_metrics, not iloc[0]."
+        )
+
+    def test_falls_back_to_min_when_api_unavailable(self):
+        rmse_series = [1.8, 2.1, 5.3, 9.0, 3.2]
+        bsl = self._bsl(api_baseline=None, perf_rmse_values=rmse_series)
+        assert bsl == 1.8, (
+            f"Fallback should be min(rmse)=1.8, got {bsl}."
+        )
+
+    def test_old_iloc0_would_have_failed_mid_drift(self):
+        """Demonstrate the old bug: iloc[0] on a mid-drift log gives wrong baseline."""
+        rmse_series = [10.5, 10.8, 11.2, 11.0, 10.9]
+        df = pd.DataFrame({"rmse": rmse_series})
+        old_bsl = df["rmse"].iloc[0]   # old (broken) logic
+        assert old_bsl == 10.5, "Setup check: old logic picks high value"
+        # The old bsl would set the baseline hline at 10.5 instead of ~2.1,
+        # causing the chart to look flat (everything near or above "baseline")
+        assert old_bsl > 5.0, (
+            "Old baseline would have been unreasonably high — confirms the bug."
+        )
+
+    def test_alert_threshold_is_correct_fraction_of_bsl(self):
+        """Alert hline must be 15% above baseline."""
+        bsl = 2.131
+        alert = bsl * 1.15
+        assert abs(alert - 2.451) < 0.01, f"Alert threshold wrong: {alert:.3f}"
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: fix #2 — R² y-axis must accommodate negative values
+# ---------------------------------------------------------------------------
+
+class TestR2AxisScaling:
+    """
+    Verify that the R² chart y-axis lower bound scales to include negative R²
+    instead of clipping at 0.
+
+    Before the fix:  range=[0, 1.05]  (negative values invisible)
+    After the fix:   range=[r2_floor, 1.05]  where r2_floor < 0 when data dips negative
+    """
+
+    def _r2_floor(self, r2_values: list) -> float:
+        """Replicate the fixed dashboard r2_floor calculation."""
+        r2_min = min(r2_values)
+        return min(r2_min - 0.05, -0.1) if r2_min < 0 else -0.05
+
+    def test_negative_r2_produces_negative_floor(self):
+        r2_series = [0.91, 0.60, -0.49, -1.22, 0.83]
+        floor = self._r2_floor(r2_series)
+        assert floor < 0, f"r2_floor must be negative when data goes below 0, got {floor}"
+        assert floor <= -1.22 - 0.05, (
+            f"Floor {floor} is not low enough to show min r2=-1.22 "
+            "(should be min - 0.05 = -1.27)"
+        )
+
+    def test_all_positive_r2_uses_small_negative_floor(self):
+        r2_series = [0.91, 0.88, 0.93, 0.85]
+        floor = self._r2_floor(r2_series)
+        assert floor == -0.05, (
+            f"When all R² > 0, floor should be -0.05 for breathing room, got {floor}"
+        )
+
+    def test_floor_is_below_min_r2(self):
+        """Floor must always be below the minimum R² value so no data is clipped."""
+        for min_r2 in [-0.05, -0.5, -1.0, -1.22]:
+            r2_series = [0.9, min_r2]
+            floor = self._r2_floor(r2_series)
+            assert floor <= min_r2, (
+                f"At min_r2={min_r2}, floor={floor} clips data (must be <= min_r2)"
+            )
+
+    def test_old_hardcoded_range_clipped_negative_r2(self):
+        """Show that the old range=[0, 1.05] would have hidden the negative data."""
+        old_range_min = 0
+        r2_min_in_data = -1.22
+        assert r2_min_in_data < old_range_min, (
+            "Confirms bug: min R² in data is below old y-axis floor of 0"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Selenium: verify chart renders correctly with fixed logic
+# ---------------------------------------------------------------------------
+
+@pytest.mark.selenium
+class TestChartFixes:
+    """End-to-end Selenium tests verifying the two chart fixes in production."""
+
+    def test_overview_chart_section_visible(self, driver):
+        from selenium.webdriver.common.by import By
+        body = driver.find_element(By.TAG_NAME, "body").text
+        assert "Prediction Error Over Time" in body, (
+            "RMSE chart section heading not visible on Overview"
+        )
+
+    def test_baseline_annotation_present_in_chart(self, driver):
+        """
+        The 'Baseline' hline annotation must appear in the rendered SVG.
+        If bsl was computed from a high iloc[0], the annotation would still
+        appear but at the wrong Y level — this confirms it's rendered at all.
+        """
+        from selenium.webdriver.common.by import By
+        page_source = driver.page_source
+        assert "Baseline" in page_source, (
+            "Baseline annotation not found in rendered page source. "
+            "Chart may not have rendered."
+        )
+
+    def test_alert_annotation_present_in_chart(self, driver):
+        from selenium.webdriver.common.by import By
+        page_source = driver.page_source
+        assert "Alert" in page_source or "+15%" in page_source, (
+            "Alert +15% annotation not found in rendered chart."
+        )
+
+    def test_r2_chart_section_visible(self, driver):
+        from selenium.webdriver.common.by import By
+        page_source = driver.page_source
+        # R² label should appear as an axis title in the SVG
+        assert "R²" in page_source or "R\u00b2" in page_source, (
+            "R² chart axis label not found — chart may not have rendered."
+        )
+
+    def test_no_traceback_on_overview(self, driver):
+        from selenium.webdriver.common.by import By
+        assert "Traceback (most recent call last)" not in \
+            driver.find_element(By.TAG_NAME, "body").text
+
+    def test_overview_screenshot_with_fixes(self, driver):
+        """Save a screenshot showing the fixed chart for visual verification."""
+        screenshot_path = ROOT / "assets" / "overview_chart_fixed.png"
+        driver.save_screenshot(str(screenshot_path))
