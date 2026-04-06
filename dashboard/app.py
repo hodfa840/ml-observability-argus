@@ -352,7 +352,7 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
     page = st.radio(
-        "",
+        "Navigation",
         ["Overview", "Drift Analysis", "Feature Insights", "Retraining Log", "Live Demo"],
         label_visibility="collapsed",
     )
@@ -492,7 +492,7 @@ if page == "Overview":
                     legend=dict(orientation="h", y=1.08, x=0),
                 )
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
 
             if "r2" in perf_df.columns:
                 fig2 = go.Figure()
@@ -517,7 +517,7 @@ if page == "Overview":
                         showlegend=False,
                     )
                 )
-                st.plotly_chart(fig2, use_container_width=True)
+                st.plotly_chart(fig2, width='stretch')
         else:
             st.info("No performance data yet — run the simulation script to generate data.")
 
@@ -593,7 +593,7 @@ if page == "Overview":
                 'margin-top:12px;margin-bottom:2px">Recent RMSE trend</div>',
                 unsafe_allow_html=True,
             )
-            st.plotly_chart(spark_fig, use_container_width=True)
+            st.plotly_chart(spark_fig, width='stretch')
 
 
 # ── Drift Analysis ────────────────────────────────────────────────────────────
@@ -708,7 +708,7 @@ elif page == "Drift Analysis":
                     yaxis=dict(gridcolor=BORDER),
                 )
             )
-            st.plotly_chart(fig_psi, use_container_width=True)
+            st.plotly_chart(fig_psi, width='stretch')
 
         with col2:
             st.markdown('<p class="section-header">KS Test p-values</p>',
@@ -744,7 +744,7 @@ elif page == "Drift Analysis":
                     yaxis=dict(gridcolor=BORDER),
                 )
             )
-            st.plotly_chart(fig_ks, use_container_width=True)
+            st.plotly_chart(fig_ks, width='stretch')
 
     st.markdown('<p class="section-header">PSI Heatmap Over Time (Top Features)</p>',
                 unsafe_allow_html=True)
@@ -796,7 +796,7 @@ elif page == "Drift Analysis":
                     yaxis=dict(gridcolor=BORDER),
                 )
             )
-            st.plotly_chart(fig_heat, use_container_width=True)
+            st.plotly_chart(fig_heat, width='stretch')
     else:
         st.info("No feature drift data yet to show the heatmap.")
 
@@ -821,7 +821,7 @@ elif page == "Drift Analysis":
                 xaxis=dict(title="Check index", gridcolor=BORDER),
             )
         )
-        st.plotly_chart(fig_t, use_container_width=True)
+        st.plotly_chart(fig_t, width='stretch')
 
 
 # ── Feature Insights ──────────────────────────────────────────────────────────
@@ -913,7 +913,7 @@ elif page == "Feature Insights":
                             ),
                         )
                     )
-                    st.plotly_chart(fig_rad, use_container_width=True)
+                    st.plotly_chart(fig_rad, width='stretch')
 
     if not imp_df.empty and "feature" in imp_df.columns and "importance" in imp_df.columns:
         st.markdown("---")
@@ -940,7 +940,7 @@ elif page == "Feature Insights":
                 yaxis=dict(gridcolor=BORDER),
             )
         )
-        st.plotly_chart(fig_imp, use_container_width=True)
+        st.plotly_chart(fig_imp, width='stretch')
     else:
         st.info("Feature importance data not available — train the initial model first.")
 
@@ -1031,7 +1031,7 @@ elif page == "Retraining Log":
                 legend=dict(orientation="h", x=0.25),
             )
         )
-        st.plotly_chart(fig_pie, use_container_width=True)
+        st.plotly_chart(fig_pie, width='stretch')
 
     st.markdown("---")
     st.markdown('<p class="section-header">Decision Log  (most recent first)</p>',
