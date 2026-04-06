@@ -45,6 +45,8 @@ class PerformanceMonitor:
         self._matched: Deque[_PredictionRecord] = deque(maxlen=window_size)
         self._baseline_rmse: Optional[float] = None
         self._perf_log_path = resolve(settings.monitoring.performance_log_path)
+        self._last_log_time: float = 0.0
+        self._last_logged_rmse: Optional[float] = None
 
     def log_prediction(self, request_id: str, prediction: float, features: dict) -> None:
         record = _PredictionRecord(
@@ -129,6 +131,18 @@ class PerformanceMonitor:
         return pd.DataFrame(rows)
 
     def _append_performance_log(self, metrics: dict) -> None:
+        """Write metrics to log, throttled to avoid flooding with duplicate values."""
+        now = time.time()
+        current_rmse = metrics.get("rmse", 0.0)
+
+        if self._last_logged_rmse is not None:
+            rmse_change = abs(current_rmse - self._last_logged_rmse) / max(self._last_logged_rmse, 0.01)
+            time_ok = (now - self._last_log_time) < 30
+            if rmse_change < 0.01 and time_ok:
+                return
+
+        self._last_log_time = now
+        self._last_logged_rmse = current_rmse
         with open(self._perf_log_path, "a", encoding="utf-8") as fh:
             fh.write(json.dumps(metrics) + "\n")
 

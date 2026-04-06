@@ -121,6 +121,13 @@ def main() -> None:
             except Exception:
                 pass
 
+        if step > 0 and step % 10 == 0 and step % 50 != 0:
+            # Emit a metrics snapshot so the performance log captures the drift curve
+            try:
+                requests.get(f"{api}/monitor/metrics", timeout=5)
+            except Exception:
+                pass
+
         if step > 0 and step % 50 == 0:
             try:
                 r = requests.get(f"{api}/monitor/drift", timeout=10)

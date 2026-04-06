@@ -26,7 +26,7 @@ done
 echo "--- Running simulation to populate monitoring data ---"
 python scripts/simulate_drift.py \
     --steps 300 \
-    --delay 0 \
+    --delay 0.05 \
     --drift-type gradual \
     --batch-size 10 &
 
