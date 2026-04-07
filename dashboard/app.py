@@ -264,56 +264,58 @@ def api_health() -> dict:
         return {}
 
 
-def _append_synthetic_metrics() -> None:
-    """Generate and append a NEW synthetic metric to performance.jsonl.
+def _generate_synthetic_dataset_with_time(n_points: int = 80) -> pd.DataFrame:
+    """Generate synthetic dataset using current time as seed for reproducibility.
 
-    This ensures the chart GROWS with each page load instead of staying static.
-    Works by appending new data points, so the file accumulates over time.
+    Works on HF Spaces because it uses time-based randomization:
+    - Each time period generates consistent-looking data
+    - But varies enough to show realistic patterns
+    - Data is deterministic based on time window
     """
-    try:
-        perf_path = Path(LOG_PATHS["performance"])
-        perf_path.parent.mkdir(parents=True, exist_ok=True)
+    import hashlib
 
-        # Count existing lines to determine current "drift level"
-        existing_lines = 0
-        if perf_path.exists():
-            existing_lines = len(perf_path.read_text(encoding="utf-8").strip().split("\n"))
+    current_time = int(time.time())
+    time_window = current_time // 15  # New data every 15 seconds
 
-        baseline_rmse = 2.5
-        i = existing_lines  # Use position as drift index
+    rmse_vals = []
+    mae_vals = []
+    r2_vals = []
 
-        # Gradual drift: RMSE increases ~2% per 10 points
-        drift = 1.0 + (i / 50) * 0.08
+    baseline_rmse = 2.5
 
-        # Random spikes: 8% of time, jump 50-100%
-        spike = 1.0 if random.random() >= 0.08 else random.uniform(1.5, 2.0)
+    for i in range(n_points):
+        # Use time window + index for deterministic randomness
+        seed_val = int(hashlib.md5(f"{time_window}_{i}".encode()).hexdigest(), 16)
+        rng = random.Random(seed_val)
+
+        # Gradual drift based on time_window
+        drift = 1.0 + (time_window / 50) * 0.08 + (i / 50) * 0.02
+
+        # Spikes based on time
+        spike = 1.0 if rng.random() >= 0.08 else rng.uniform(1.5, 2.0)
 
         # Seasonal oscillation
-        seasonal = 1.0 + 0.15 * np.sin(i * np.pi / 40)
+        seasonal = 1.0 + 0.15 * np.sin((time_window + i) * np.pi / 40)
 
         # Noise
-        noise = 1.0 + random.gauss(0, 0.05)
+        noise = 1.0 + rng.gauss(0, 0.05)
 
-        rmse_val = baseline_rmse * drift * spike * seasonal * noise
-        rmse_val = np.clip(rmse_val, 1.5, 12.0)
+        rmse = baseline_rmse * drift * spike * seasonal * noise
+        rmse = np.clip(rmse, 1.5, 12.0)
 
-        mae_val = rmse_val * 0.7 + random.gauss(0, 0.2)
+        rmse_vals.append(rmse)
+        mae_vals.append(rmse * 0.7 + rng.gauss(0, 0.2))
 
-        # R² degrades with drift
-        r2_val = 0.75 - (i / 200) * 0.3 + 0.1 * np.sin(i * np.pi / 30)
-        r2_val = np.clip(r2_val, -0.5, 0.9)
+        # R² degrades
+        r2 = 0.75 - (time_window / 200) * 0.3 - (i / n_points) * 0.2 + 0.1 * np.sin((time_window + i) * np.pi / 30)
+        r2 = np.clip(r2, -0.5, 0.9)
+        r2_vals.append(r2)
 
-        metric = {
-            "rmse": round(rmse_val, 3),
-            "mae": round(mae_val, 3),
-            "r2": round(r2_val, 3),
-            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        }
-
-        with open(perf_path, "a", encoding="utf-8") as file:
-            file.write(json.dumps(metric) + "\n")
-    except (OSError, IOError):
-        pass  # Fail silently
+    return pd.DataFrame({
+        "rmse": rmse_vals,
+        "mae": mae_vals,
+        "r2": r2_vals,
+    })
 
 
 @st.cache_data(ttl=10)
@@ -512,10 +514,11 @@ if page == "Overview":
         st.markdown('<p class="section-header">Prediction Error Over Time</p>',
                     unsafe_allow_html=True)
 
-        # Append a NEW synthetic metric on every page load to keep chart growing
-        _append_synthetic_metrics()
-
         perf_df = load_jsonl(LOG_PATHS["performance"])
+
+        # Fallback to time-based synthetic data if no real data
+        if perf_df.empty:
+            perf_df = _generate_synthetic_dataset_with_time(n_points=80)
 
         if not perf_df.empty and "rmse" in perf_df.columns:
             perf_df["idx"] = range(len(perf_df))
