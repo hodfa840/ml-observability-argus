@@ -275,7 +275,7 @@ def _generate_synthetic_dataset_with_time(n_points: int = 80) -> pd.DataFrame:
     import hashlib
 
     current_time = int(time.time())
-    time_window = current_time // 15  # New data every 15 seconds
+    time_window = current_time // 3  # New data every 3 seconds (matches auto-refresh)
 
     rmse_vals = []
     mae_vals = []
