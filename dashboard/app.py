@@ -264,68 +264,55 @@ def api_health() -> dict:
         return {}
 
 
-@st.cache_resource
-def _init_synthetic_state():
-    """Initialize synthetic data state (persists across reruns)."""
-    return {
-        "request_count": 0,
-        "history": {"rmse": [], "mae": [], "r2": []}
-    }
+def _generate_synthetic_dataset(n_points: int = 80) -> pd.DataFrame:
+    """Generate a complete synthetic dataset with realistic drift patterns.
 
+    This runs ONCE per page load and generates all the data at once.
+    Simple, works on HF Spaces without needing caching tricks.
 
-def _get_synthetic_metrics() -> dict:
-    """Generate realistic synthetic metrics with drift patterns.
+    Args:
+        n_points: Number of data points to generate
 
-    Used when API is offline (e.g., on HF Space without backend).
-    Simulates gradual RMSE increase, spikes, and seasonal variation.
-    Data persists across page reloads via st.cache_resource.
+    Returns:
+        DataFrame with rmse, mae, r2 columns
     """
-    state = _init_synthetic_state()  # Persists across reloads via cache
-    state["request_count"] += 1
-    request_count = state["request_count"]
+    rmse_vals = []
+    mae_vals = []
+    r2_vals = []
 
-    # Baseline RMSE: ~2.5 minutes
     baseline_rmse = 2.5
 
-    # Gradual drift: +2% per 100 requests
-    drift_factor = 1.0 + (request_count / 100) * 0.02
+    for i in range(n_points):
+        # Gradual drift: RMSE increases ~2% per 10 points
+        drift = 1.0 + (i / 50) * 0.08
 
-    # Random spikes: 5% of time, sudden +30-80% error
-    spike_factor = 1.0 if random.random() >= 0.05 else random.uniform(1.3, 1.8)
+        # Random spikes: 8% of time, RMSE jumps 50-100%
+        spike = 1.0
+        if random.random() < 0.08:
+            spike = random.uniform(1.5, 2.0)
 
-    # Seasonal variation: ±10% over ~500 requests
-    seasonal = 1.0 + 0.1 * np.sin(request_count * np.pi / 250)
+        # Seasonal oscillation: ±15% over dataset
+        seasonal = 1.0 + 0.15 * np.sin(i * np.pi / 40)
 
-    rmse_val = baseline_rmse * drift_factor * spike_factor * seasonal
-    rmse_val = max(1.5, min(rmse_val, 12.0))  # Clamp between 1.5-12
+        # Noise
+        noise = 1.0 + random.gauss(0, 0.05)
 
-    # MAE is ~70% of RMSE
-    mae_val = rmse_val * 0.7 + random.gauss(0, 0.1)
+        rmse = baseline_rmse * drift * spike * seasonal * noise
+        rmse = np.clip(rmse, 1.5, 12.0)
 
-    # R² oscillates: starts at 0.72, gradually decreases with drift
-    r2_base = 0.72 - (request_count / 500) * 0.15
-    r2_val = r2_base + 0.05 * np.sin(request_count * np.pi / 150)
-    r2_val = max(-0.5, min(r2_val, 0.85))
+        rmse_vals.append(rmse)
+        mae_vals.append(rmse * 0.7 + random.gauss(0, 0.2))
 
-    # Keep rolling history (last 100 points) in cached state
-    state["history"]["rmse"].append(rmse_val)
-    state["history"]["mae"].append(mae_val)
-    state["history"]["r2"].append(r2_val)
+        # R² starts high, degrades with drift
+        r2 = 0.75 - (i / n_points) * 0.3 + 0.1 * np.sin(i * np.pi / 30)
+        r2 = np.clip(r2, -0.5, 0.9)
+        r2_vals.append(r2)
 
-    if len(state["history"]["rmse"]) > 100:
-        state["history"]["rmse"] = state["history"]["rmse"][-100:]
-        state["history"]["mae"] = state["history"]["mae"][-100:]
-        state["history"]["r2"] = state["history"]["r2"][-100:]
-
-    return {
-        "rmse": round(rmse_val, 3),
-        "mae": round(mae_val, 3),
-        "r2": round(r2_val, 3),
-        "n_samples": request_count * 8,
-        "n_pending": random.randint(0, 15),
-        "baseline_rmse": baseline_rmse,
-        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-    }
+    return pd.DataFrame({
+        "rmse": rmse_vals,
+        "mae": mae_vals,
+        "r2": r2_vals,
+    })
 
 
 @st.cache_data(ttl=10)
@@ -526,14 +513,8 @@ if page == "Overview":
         perf_df = load_jsonl(LOG_PATHS["performance"])
 
         # Fallback to synthetic data if performance.jsonl is empty
-        if perf_df.empty and "syn_history" in st.session_state:
-            syn_hist = st.session_state.syn_history
-            if syn_hist["rmse"]:  # If we have synthetic history
-                perf_df = pd.DataFrame({
-                    "rmse": syn_hist["rmse"],
-                    "mae": syn_hist["mae"],
-                    "r2": syn_hist["r2"],
-                })
+        if perf_df.empty:
+            perf_df = _generate_synthetic_dataset(n_points=80)
 
         if not perf_df.empty and "rmse" in perf_df.columns:
             perf_df["idx"] = range(len(perf_df))
