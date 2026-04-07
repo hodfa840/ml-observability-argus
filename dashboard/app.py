@@ -264,18 +264,22 @@ def api_health() -> dict:
         return {}
 
 
-def _generate_synthetic_dataset_with_time(n_points: int = 80) -> pd.DataFrame:
-    """Generate synthetic dataset using current time as seed for reproducibility.
+def _generate_synthetic_dataset_with_time() -> pd.DataFrame:
+    """Generate synthetic dataset that GROWS over time.
 
-    Works on HF Spaces because it uses time-based randomization:
-    - Each time period generates consistent-looking data
-    - But varies enough to show realistic patterns
-    - Data is deterministic based on time window
+    Works on HF Spaces:
+    - Generates one point per 3-second window
+    - Chart naturally grows without file persistence
+    - After 30 min: 600 points (30*60/3)
+    - After 1 hour: 1200 points
+    - Never flattens because it's always adding new points
     """
     import hashlib
 
     current_time = int(time.time())
-    time_window = current_time // 3  # New data every 3 seconds (matches auto-refresh)
+    start_time = 1712419200  # Arbitrary fixed start (2024-04-06)
+    elapsed = current_time - start_time
+    n_points = max(1, (elapsed // 3) + 1)  # One point per 3-second window
 
     rmse_vals = []
     mae_vals = []
@@ -284,18 +288,18 @@ def _generate_synthetic_dataset_with_time(n_points: int = 80) -> pd.DataFrame:
     baseline_rmse = 2.5
 
     for i in range(n_points):
-        # Use time window + index for deterministic randomness
-        seed_val = int(hashlib.md5(f"{time_window}_{i}".encode()).hexdigest(), 16)
+        # Use elapsed time + index for deterministic randomness
+        seed_val = int(hashlib.md5(f"{elapsed}_{i}".encode()).hexdigest(), 16)
         rng = random.Random(seed_val)
 
-        # Gradual drift based on time_window
-        drift = 1.0 + (time_window / 50) * 0.08 + (i / 50) * 0.02
+        # Gradual drift based on elapsed time
+        drift = 1.0 + (elapsed / 100) * 0.08 + (i / n_points) * 0.02
 
         # Spikes based on time
         spike = 1.0 if rng.random() >= 0.08 else rng.uniform(1.5, 2.0)
 
         # Seasonal oscillation
-        seasonal = 1.0 + 0.15 * np.sin((time_window + i) * np.pi / 40)
+        seasonal = 1.0 + 0.15 * np.sin((elapsed + i) * np.pi / 40)
 
         # Noise
         noise = 1.0 + rng.gauss(0, 0.05)
@@ -306,10 +310,10 @@ def _generate_synthetic_dataset_with_time(n_points: int = 80) -> pd.DataFrame:
         rmse_vals.append(rmse)
         mae_vals.append(rmse * 0.7 + rng.gauss(0, 0.2))
 
-        # R² degrades
-        r2 = 0.75 - (time_window / 200) * 0.3 - (i / n_points) * 0.2 + 0.1 * np.sin((time_window + i) * np.pi / 30)
-        r2 = np.clip(r2, -0.5, 0.9)
-        r2_vals.append(r2)
+        # R² degrades over time
+        r2_val = 0.75 - (elapsed / 200) * 0.3 - (i / n_points) * 0.2 + 0.1 * np.sin((elapsed + i) * np.pi / 30)
+        r2_val = np.clip(r2_val, -0.5, 0.9)
+        r2_vals.append(r2_val)
 
     return pd.DataFrame({
         "rmse": rmse_vals,
@@ -518,7 +522,7 @@ if page == "Overview":
 
         # Fallback to time-based synthetic data if no real data
         if perf_df.empty:
-            perf_df = _generate_synthetic_dataset_with_time(n_points=80)
+            perf_df = _generate_synthetic_dataset_with_time()
 
         if not perf_df.empty and "rmse" in perf_df.columns:
             perf_df["idx"] = range(len(perf_df))
