@@ -32,10 +32,12 @@ st.set_page_config(
     initial_sidebar_state="auto",
 )
 
-# Force page refresh every 3 seconds to animate synthetic data
-# This is necessary on HF Spaces where Streamlit doesn't auto-rerun
+# HF Spaces auto-refresh via JavaScript (meta refresh doesn't work in iframes)
 st.markdown("""
-<meta http-equiv="refresh" content="3">
+<script>
+  // Reload page every 3 seconds to pull fresh data
+  setTimeout(() => { window.location.reload(); }, 3000);
+</script>
 """, unsafe_allow_html=True)
 
 st.markdown("""
@@ -311,7 +313,7 @@ def _get_synthetic_metrics() -> dict:
         st.session_state.syn_history["mae"] = st.session_state.syn_history["mae"][-100:]
         st.session_state.syn_history["r2"] = st.session_state.syn_history["r2"][-100:]
 
-    return {
+    syn_metrics = {
         "rmse": round(rmse_val, 3),
         "mae": round(mae_val, 3),
         "r2": round(r2_val, 3),
@@ -320,6 +322,17 @@ def _get_synthetic_metrics() -> dict:
         "baseline_rmse": baseline_rmse,
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
+
+    # Also write to performance.jsonl so chart can read it across page reloads
+    try:
+        perf_path = Path(LOG_PATHS.get("performance", "data/performance.jsonl"))
+        perf_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(perf_path, "a", encoding="utf-8") as file:
+            file.write(json.dumps(syn_metrics) + "\n")
+    except (OSError, IOError):
+        pass  # Fail silently if can't write
+
+    return syn_metrics
 
 
 @st.cache_data(ttl=10)
