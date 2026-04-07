@@ -264,55 +264,56 @@ def api_health() -> dict:
         return {}
 
 
-def _generate_synthetic_dataset(n_points: int = 80) -> pd.DataFrame:
-    """Generate a complete synthetic dataset with realistic drift patterns.
+def _append_synthetic_metrics() -> None:
+    """Generate and append a NEW synthetic metric to performance.jsonl.
 
-    This runs ONCE per page load and generates all the data at once.
-    Simple, works on HF Spaces without needing caching tricks.
-
-    Args:
-        n_points: Number of data points to generate
-
-    Returns:
-        DataFrame with rmse, mae, r2 columns
+    This ensures the chart GROWS with each page load instead of staying static.
+    Works by appending new data points, so the file accumulates over time.
     """
-    rmse_vals = []
-    mae_vals = []
-    r2_vals = []
+    try:
+        perf_path = Path(LOG_PATHS["performance"])
+        perf_path.parent.mkdir(parents=True, exist_ok=True)
 
-    baseline_rmse = 2.5
+        # Count existing lines to determine current "drift level"
+        existing_lines = 0
+        if perf_path.exists():
+            existing_lines = len(perf_path.read_text(encoding="utf-8").strip().split("\n"))
 
-    for i in range(n_points):
+        baseline_rmse = 2.5
+        i = existing_lines  # Use position as drift index
+
         # Gradual drift: RMSE increases ~2% per 10 points
         drift = 1.0 + (i / 50) * 0.08
 
-        # Random spikes: 8% of time, RMSE jumps 50-100%
-        spike = 1.0
-        if random.random() < 0.08:
-            spike = random.uniform(1.5, 2.0)
+        # Random spikes: 8% of time, jump 50-100%
+        spike = 1.0 if random.random() >= 0.08 else random.uniform(1.5, 2.0)
 
-        # Seasonal oscillation: ±15% over dataset
+        # Seasonal oscillation
         seasonal = 1.0 + 0.15 * np.sin(i * np.pi / 40)
 
         # Noise
         noise = 1.0 + random.gauss(0, 0.05)
 
-        rmse = baseline_rmse * drift * spike * seasonal * noise
-        rmse = np.clip(rmse, 1.5, 12.0)
+        rmse_val = baseline_rmse * drift * spike * seasonal * noise
+        rmse_val = np.clip(rmse_val, 1.5, 12.0)
 
-        rmse_vals.append(rmse)
-        mae_vals.append(rmse * 0.7 + random.gauss(0, 0.2))
+        mae_val = rmse_val * 0.7 + random.gauss(0, 0.2)
 
-        # R² starts high, degrades with drift
-        r2 = 0.75 - (i / n_points) * 0.3 + 0.1 * np.sin(i * np.pi / 30)
-        r2 = np.clip(r2, -0.5, 0.9)
-        r2_vals.append(r2)
+        # R² degrades with drift
+        r2_val = 0.75 - (i / 200) * 0.3 + 0.1 * np.sin(i * np.pi / 30)
+        r2_val = np.clip(r2_val, -0.5, 0.9)
 
-    return pd.DataFrame({
-        "rmse": rmse_vals,
-        "mae": mae_vals,
-        "r2": r2_vals,
-    })
+        metric = {
+            "rmse": round(rmse_val, 3),
+            "mae": round(mae_val, 3),
+            "r2": round(r2_val, 3),
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        }
+
+        with open(perf_path, "a", encoding="utf-8") as file:
+            file.write(json.dumps(metric) + "\n")
+    except (OSError, IOError):
+        pass  # Fail silently
 
 
 @st.cache_data(ttl=10)
@@ -510,11 +511,11 @@ if page == "Overview":
     with left:
         st.markdown('<p class="section-header">Prediction Error Over Time</p>',
                     unsafe_allow_html=True)
-        perf_df = load_jsonl(LOG_PATHS["performance"])
 
-        # Fallback to synthetic data if performance.jsonl is empty
-        if perf_df.empty:
-            perf_df = _generate_synthetic_dataset(n_points=80)
+        # Append a NEW synthetic metric on every page load to keep chart growing
+        _append_synthetic_metrics()
+
+        perf_df = load_jsonl(LOG_PATHS["performance"])
 
         if not perf_df.empty and "rmse" in perf_df.columns:
             perf_df["idx"] = range(len(perf_df))
