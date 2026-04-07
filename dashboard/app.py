@@ -264,19 +264,25 @@ def api_health() -> dict:
         return {}
 
 
+@st.cache_resource
+def _init_synthetic_state():
+    """Initialize synthetic data state (persists across reruns)."""
+    return {
+        "request_count": 0,
+        "history": {"rmse": [], "mae": [], "r2": []}
+    }
+
+
 def _get_synthetic_metrics() -> dict:
     """Generate realistic synthetic metrics with drift patterns.
 
     Used when API is offline (e.g., on HF Space without backend).
     Simulates gradual RMSE increase, spikes, and seasonal variation.
-    Runs on every Streamlit rerun to animate charts smoothly.
+    Data persists across page reloads via st.cache_resource.
     """
-    if "syn_request_count" not in st.session_state:
-        st.session_state.syn_request_count = 0
-        st.session_state.syn_history = {"rmse": [], "mae": [], "r2": []}
-
-    st.session_state.syn_request_count += 1
-    request_count = st.session_state.syn_request_count
+    state = _init_synthetic_state()  # Persists across reloads via cache
+    state["request_count"] += 1
+    request_count = state["request_count"]
 
     # Baseline RMSE: ~2.5 minutes
     baseline_rmse = 2.5
@@ -285,9 +291,7 @@ def _get_synthetic_metrics() -> dict:
     drift_factor = 1.0 + (request_count / 100) * 0.02
 
     # Random spikes: 5% of time, sudden +30-80% error
-    spike_factor = 1.0
-    if random.random() < 0.05:
-        spike_factor = random.uniform(1.3, 1.8)
+    spike_factor = 1.0 if random.random() >= 0.05 else random.uniform(1.3, 1.8)
 
     # Seasonal variation: ±10% over ~500 requests
     seasonal = 1.0 + 0.1 * np.sin(request_count * np.pi / 250)
@@ -303,36 +307,25 @@ def _get_synthetic_metrics() -> dict:
     r2_val = r2_base + 0.05 * np.sin(request_count * np.pi / 150)
     r2_val = max(-0.5, min(r2_val, 0.85))
 
-    # Keep rolling history (last 100 points)
-    st.session_state.syn_history["rmse"].append(rmse_val)
-    st.session_state.syn_history["mae"].append(mae_val)
-    st.session_state.syn_history["r2"].append(r2_val)
+    # Keep rolling history (last 100 points) in cached state
+    state["history"]["rmse"].append(rmse_val)
+    state["history"]["mae"].append(mae_val)
+    state["history"]["r2"].append(r2_val)
 
-    if len(st.session_state.syn_history["rmse"]) > 100:
-        st.session_state.syn_history["rmse"] = st.session_state.syn_history["rmse"][-100:]
-        st.session_state.syn_history["mae"] = st.session_state.syn_history["mae"][-100:]
-        st.session_state.syn_history["r2"] = st.session_state.syn_history["r2"][-100:]
+    if len(state["history"]["rmse"]) > 100:
+        state["history"]["rmse"] = state["history"]["rmse"][-100:]
+        state["history"]["mae"] = state["history"]["mae"][-100:]
+        state["history"]["r2"] = state["history"]["r2"][-100:]
 
-    syn_metrics = {
+    return {
         "rmse": round(rmse_val, 3),
         "mae": round(mae_val, 3),
         "r2": round(r2_val, 3),
-        "n_samples": request_count * 8,  # ~8 samples per synthetic request
+        "n_samples": request_count * 8,
         "n_pending": random.randint(0, 15),
         "baseline_rmse": baseline_rmse,
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
-
-    # Also write to performance.jsonl so chart can read it across page reloads
-    try:
-        perf_path = Path(LOG_PATHS.get("performance", "data/performance.jsonl"))
-        perf_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(perf_path, "a", encoding="utf-8") as file:
-            file.write(json.dumps(syn_metrics) + "\n")
-    except (OSError, IOError):
-        pass  # Fail silently if can't write
-
-    return syn_metrics
 
 
 @st.cache_data(ttl=10)
