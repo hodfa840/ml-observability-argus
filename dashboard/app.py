@@ -264,62 +264,68 @@ def api_health() -> dict:
         return {}
 
 
-def _generate_synthetic_dataset_with_time() -> pd.DataFrame:
-    """Generate synthetic dataset that GROWS over time.
+@st.cache_resource
+def _get_synthetic_accumulator():
+    """Persistent accumulator that survives page reloads in same session."""
+    return {"rmse": [], "mae": [], "r2": [], "last_time": int(time.time())}
 
-    Works on HF Spaces:
-    - Generates one point per 3-second window
-    - Chart naturally grows without file persistence
-    - After 30 min: 600 points (30*60/3)
-    - After 1 hour: 1200 points
-    - Never flattens because it's always adding new points
-    """
-    import hashlib
 
-    current_time = int(time.time())
-    # Reset every 2 hours (7200 seconds) so chart doesn't get too crowded
-    two_hour_cycle = current_time % 7200
-    n_points = max(1, (two_hour_cycle // 3) + 1)  # One point per 3-second window
-
-    rmse_vals = []
-    mae_vals = []
-    r2_vals = []
+def _generate_synthetic_point() -> tuple:
+    """Generate ONE new synthetic metric point."""
+    acc = _get_synthetic_accumulator()
+    current_point_index = len(acc["rmse"])
 
     baseline_rmse = 2.5
 
-    for i in range(n_points):
-        # Use cycle time + index for deterministic randomness
-        seed_val = int(hashlib.md5(f"{two_hour_cycle}_{i}".encode()).hexdigest(), 16)
-        rng = random.Random(seed_val)
+    # Pure upward trend - NO oscillation back down
+    drift = 1.0 + (current_point_index / 30) * 0.15  # Increases ~15% per 30 points
 
-        # Gradual drift based on cycle time within 2-hour window
-        drift = 1.0 + (two_hour_cycle / 1000) * 0.08 + (i / n_points) * 0.02
+    # Random spikes: 8% of time
+    spike = 1.0 if random.random() >= 0.08 else random.uniform(1.5, 2.2)
 
-        # Spikes based on time
-        spike = 1.0 if rng.random() >= 0.08 else rng.uniform(1.5, 2.0)
+    # Random noise only
+    noise = 1.0 + random.gauss(0, 0.04)
 
-        # Seasonal oscillation
-        seasonal = 1.0 + 0.15 * np.sin((two_hour_cycle + i) * np.pi / 40)
+    rmse = baseline_rmse * drift * spike * noise
+    rmse = np.clip(rmse, 1.5, 12.0)
 
-        # Noise
-        noise = 1.0 + rng.gauss(0, 0.05)
+    mae = rmse * 0.7 + random.gauss(0, 0.15)
 
-        rmse = baseline_rmse * drift * spike * seasonal * noise
-        rmse = np.clip(rmse, 1.5, 12.0)
+    # R² degrades monotonically (never comes back up)
+    r2_val = 0.75 - (current_point_index / 100) * 0.15
+    r2_val = np.clip(r2_val, -0.5, 0.85)
 
-        rmse_vals.append(rmse)
-        mae_vals.append(rmse * 0.7 + rng.gauss(0, 0.2))
+    return rmse, mae, r2_val
 
-        # R² degrades within the 2-hour cycle
-        r2_val = 0.75 - (two_hour_cycle / 2000) * 0.3 - (i / n_points) * 0.2
-        r2_val = r2_val + 0.1 * np.sin((two_hour_cycle + i) * np.pi / 30)
-        r2_val = np.clip(r2_val, -0.5, 0.9)
-        r2_vals.append(r2_val)
+
+def _get_synthetic_data() -> pd.DataFrame:
+    """Get accumulated synthetic data, adding one point per call."""
+    # Reset if 2 hours have passed (for freshness)
+    acc = _get_synthetic_accumulator()
+    current_time = int(time.time())
+
+    if current_time - acc["last_time"] > 7200:  # 2 hours
+        acc["rmse"].clear()
+        acc["mae"].clear()
+        acc["r2"].clear()
+        acc["last_time"] = current_time
+
+    # Add one new point
+    rmse, mae, r2_val = _generate_synthetic_point()
+    acc["rmse"].append(rmse)
+    acc["mae"].append(mae)
+    acc["r2"].append(r2_val)
+
+    # Keep last 500 points max
+    if len(acc["rmse"]) > 500:
+        acc["rmse"] = acc["rmse"][-500:]
+        acc["mae"] = acc["mae"][-500:]
+        acc["r2"] = acc["r2"][-500:]
 
     return pd.DataFrame({
-        "rmse": rmse_vals,
-        "mae": mae_vals,
-        "r2": r2_vals,
+        "rmse": acc["rmse"],
+        "mae": acc["mae"],
+        "r2": acc["r2"],
     })
 
 
@@ -521,9 +527,9 @@ if page == "Overview":
 
         perf_df = load_jsonl(LOG_PATHS["performance"])
 
-        # Fallback to time-based synthetic data if no real data
+        # Fallback to synthetic data if no real data
         if perf_df.empty:
-            perf_df = _generate_synthetic_dataset_with_time()
+            perf_df = _get_synthetic_data()
 
         if not perf_df.empty and "rmse" in perf_df.columns:
             perf_df["idx"] = range(len(perf_df))
