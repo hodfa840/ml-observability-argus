@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import json
 import os
+import random
+import time
 from pathlib import Path
 
 import numpy as np
@@ -29,6 +31,12 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="auto",
 )
+
+# Force page refresh every 3 seconds to animate synthetic data
+# This is necessary on HF Spaces where Streamlit doesn't auto-rerun
+st.markdown("""
+<meta http-equiv="refresh" content="3">
+""", unsafe_allow_html=True)
 
 st.markdown("""
 <style>
@@ -254,14 +262,83 @@ def api_health() -> dict:
         return {}
 
 
+def _get_synthetic_metrics() -> dict:
+    """Generate realistic synthetic metrics with drift patterns.
+
+    Used when API is offline (e.g., on HF Space without backend).
+    Simulates gradual RMSE increase, spikes, and seasonal variation.
+    Runs on every Streamlit rerun to animate charts smoothly.
+    """
+    if "syn_request_count" not in st.session_state:
+        st.session_state.syn_request_count = 0
+        st.session_state.syn_history = {"rmse": [], "mae": [], "r2": []}
+
+    st.session_state.syn_request_count += 1
+    request_count = st.session_state.syn_request_count
+
+    # Baseline RMSE: ~2.5 minutes
+    baseline_rmse = 2.5
+
+    # Gradual drift: +2% per 100 requests
+    drift_factor = 1.0 + (request_count / 100) * 0.02
+
+    # Random spikes: 5% of time, sudden +30-80% error
+    spike_factor = 1.0
+    if random.random() < 0.05:
+        spike_factor = random.uniform(1.3, 1.8)
+
+    # Seasonal variation: ±10% over ~500 requests
+    seasonal = 1.0 + 0.1 * np.sin(request_count * np.pi / 250)
+
+    rmse_val = baseline_rmse * drift_factor * spike_factor * seasonal
+    rmse_val = max(1.5, min(rmse_val, 12.0))  # Clamp between 1.5-12
+
+    # MAE is ~70% of RMSE
+    mae_val = rmse_val * 0.7 + random.gauss(0, 0.1)
+
+    # R² oscillates: starts at 0.72, gradually decreases with drift
+    r2_base = 0.72 - (request_count / 500) * 0.15
+    r2_val = r2_base + 0.05 * np.sin(request_count * np.pi / 150)
+    r2_val = max(-0.5, min(r2_val, 0.85))
+
+    # Keep rolling history (last 100 points)
+    st.session_state.syn_history["rmse"].append(rmse_val)
+    st.session_state.syn_history["mae"].append(mae_val)
+    st.session_state.syn_history["r2"].append(r2_val)
+
+    if len(st.session_state.syn_history["rmse"]) > 100:
+        st.session_state.syn_history["rmse"] = st.session_state.syn_history["rmse"][-100:]
+        st.session_state.syn_history["mae"] = st.session_state.syn_history["mae"][-100:]
+        st.session_state.syn_history["r2"] = st.session_state.syn_history["r2"][-100:]
+
+    return {
+        "rmse": round(rmse_val, 3),
+        "mae": round(mae_val, 3),
+        "r2": round(r2_val, 3),
+        "n_samples": request_count * 8,  # ~8 samples per synthetic request
+        "n_pending": random.randint(0, 15),
+        "baseline_rmse": baseline_rmse,
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+
+
 @st.cache_data(ttl=10)
-def api_metrics() -> dict:
-    """Fetch the /monitor/metrics endpoint; return empty dict if unreachable."""
+def _api_metrics_cached() -> dict:
+    """Cached API call (only for when API is online)."""
     try:
         http_resp = requests.get(f"{API_URL}/monitor/metrics", timeout=3)
         return http_resp.json()
     except requests.RequestException:
-        return {}
+        return None
+
+
+def api_metrics() -> dict:
+    """Get metrics: try API first, fall back to synthetic data if offline."""
+    result = _api_metrics_cached()
+    if result is not None:
+        return result
+    # API offline: use synthetic data (updates every rerun, no cache)
+    return _get_synthetic_metrics()
 
 
 def _pct_color(pct: float | None) -> str:
