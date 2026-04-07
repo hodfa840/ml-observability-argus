@@ -277,9 +277,9 @@ def _generate_synthetic_dataset_with_time() -> pd.DataFrame:
     import hashlib
 
     current_time = int(time.time())
-    start_time = 1712419200  # Arbitrary fixed start (2024-04-06)
-    elapsed = current_time - start_time
-    n_points = max(1, (elapsed // 3) + 1)  # One point per 3-second window
+    # Reset every 2 hours (7200 seconds) so chart doesn't get too crowded
+    two_hour_cycle = current_time % 7200
+    n_points = max(1, (two_hour_cycle // 3) + 1)  # One point per 3-second window
 
     rmse_vals = []
     mae_vals = []
@@ -288,18 +288,18 @@ def _generate_synthetic_dataset_with_time() -> pd.DataFrame:
     baseline_rmse = 2.5
 
     for i in range(n_points):
-        # Use elapsed time + index for deterministic randomness
-        seed_val = int(hashlib.md5(f"{elapsed}_{i}".encode()).hexdigest(), 16)
+        # Use cycle time + index for deterministic randomness
+        seed_val = int(hashlib.md5(f"{two_hour_cycle}_{i}".encode()).hexdigest(), 16)
         rng = random.Random(seed_val)
 
-        # Gradual drift based on elapsed time
-        drift = 1.0 + (elapsed / 100) * 0.08 + (i / n_points) * 0.02
+        # Gradual drift based on cycle time within 2-hour window
+        drift = 1.0 + (two_hour_cycle / 1000) * 0.08 + (i / n_points) * 0.02
 
         # Spikes based on time
         spike = 1.0 if rng.random() >= 0.08 else rng.uniform(1.5, 2.0)
 
         # Seasonal oscillation
-        seasonal = 1.0 + 0.15 * np.sin((elapsed + i) * np.pi / 40)
+        seasonal = 1.0 + 0.15 * np.sin((two_hour_cycle + i) * np.pi / 40)
 
         # Noise
         noise = 1.0 + rng.gauss(0, 0.05)
@@ -310,8 +310,9 @@ def _generate_synthetic_dataset_with_time() -> pd.DataFrame:
         rmse_vals.append(rmse)
         mae_vals.append(rmse * 0.7 + rng.gauss(0, 0.2))
 
-        # R² degrades over time
-        r2_val = 0.75 - (elapsed / 200) * 0.3 - (i / n_points) * 0.2 + 0.1 * np.sin((elapsed + i) * np.pi / 30)
+        # R² degrades within the 2-hour cycle
+        r2_val = 0.75 - (two_hour_cycle / 2000) * 0.3 - (i / n_points) * 0.2
+        r2_val = r2_val + 0.1 * np.sin((two_hour_cycle + i) * np.pi / 30)
         r2_val = np.clip(r2_val, -0.5, 0.9)
         r2_vals.append(r2_val)
 
