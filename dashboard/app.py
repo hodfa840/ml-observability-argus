@@ -519,6 +519,16 @@ if page == "Overview":
                     unsafe_allow_html=True)
         perf_df = load_jsonl(LOG_PATHS["performance"])
 
+        # Fallback to synthetic data if performance.jsonl is empty
+        if perf_df.empty and "syn_history" in st.session_state:
+            syn_hist = st.session_state.syn_history
+            if syn_hist["rmse"]:  # If we have synthetic history
+                perf_df = pd.DataFrame({
+                    "rmse": syn_hist["rmse"],
+                    "mae": syn_hist["mae"],
+                    "r2": syn_hist["r2"],
+                })
+
         if not perf_df.empty and "rmse" in perf_df.columns:
             perf_df["idx"] = range(len(perf_df))
             bsl = baseline or perf_df["rmse"].min()
@@ -1421,6 +1431,5 @@ if st.session_state.get("_scroll_page") != page:
 
 # ── Auto-refresh (must run AFTER all page content is rendered) ────────────────
 if auto_refresh:
-    import time
     time.sleep(15)
     st.rerun()
